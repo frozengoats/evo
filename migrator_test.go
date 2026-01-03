@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -73,7 +74,9 @@ func TestCreateDatabase(t *testing.T) {
 	// verify that all the migrators are present
 	standardConn, err := pgx.Connect(context.Background(), config.GetUserConnUrl())
 	assert.NoError(t, err)
-	defer standardConn.Close(context.Background())
+	defer func() {
+		_ = standardConn.Close(context.Background())
+	}()
 
 	pastMigrations, err := getPastMigrations(standardConn)
 	assert.NoError(t, err)
@@ -86,4 +89,21 @@ func TestCreateDatabase(t *testing.T) {
 
 	err = doMigration(config, nil)
 	assert.NoError(t, err)
+}
+
+func TestMutlipleConcurrent(t *testing.T) {
+	pgContainer, config, err := setupDb()
+	assert.NoError(t, err)
+	defer testcontainers.CleanupContainer(t, pgContainer)
+
+	wg := sync.WaitGroup{}
+	for range 3 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err = doMigration(config, nil)
+			assert.NoError(t, err)
+		}()
+	}
+	wg.Wait()
 }

@@ -14,7 +14,7 @@ test:
 
 .PHONY: lint-check
 lint-check:
-	docker run -t --rm -v $(shell pwd):/app -w /app golangci/golangci-lint:v2.1.1 golangci-lint run
+	docker run -t --rm -v $(shell pwd):/app -w /app golangci/golangci-lint:v2.7.2 golangci-lint run
 
 .PHONY: build
 build: build-docker

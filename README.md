@@ -4,6 +4,7 @@ evo is a postgres compatible database migration tool, designed to operate as a s
 ## features
 - create database
 - roll forward migrations
+- concurrent access mitigation using postgres/cockroachdb compatible locking strategy
 
 ## cli usage
 ```
