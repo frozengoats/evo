@@ -1,0 +1,1 @@
+CREATE INDEX ix_mytab2 ON mytable2 USING BTREE (name);
