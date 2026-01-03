@@ -24,11 +24,10 @@ build-docker: bin/evo
 	docker build -t $(IMAGE_NAME):$(VERSION) .
 
 .PHONY: publish
+publish: build
 	docker push $(IMAGE_NAME):$(VERSION)
-
-.PHONY: publish-major
-publish-major: publish
 	docker tag $(IMAGE_NAME):$(VERSION) $(IMAGE_NAME):$(MAJOR_VERSION)
+	docker push $(IMAGE_NAME):$(MAJOR_VERSION)
 
 bin/evo: $(GO_FILES)
 	$(GO_RUN) build -trimpath -ldflags="-s -w -X 'main.Version=$(VERSION)'" -mod=vendor -o ./bin/evo main.go
