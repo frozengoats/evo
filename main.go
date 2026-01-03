@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"hash/maphash"
 	"html/template"
 	"os"
 	"path/filepath"
@@ -137,7 +136,9 @@ func ensureUser(config *Config) error {
 	if err != nil {
 		return fmt.Errorf("unable to connect to database '%s': %w", config.Database, err)
 	}
-	defer standardConn.Close(context.Background())
+	defer func() {
+		_ = standardConn.Close(context.Background())
+	}()
 
 	fmt.Printf("checking for existing user '%s'\n", config.Username)
 	row := standardConn.QueryRow(context.Background(), "SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname = $1)", config.Username)
@@ -252,24 +253,56 @@ func executeMigrator(sql string, conn Executable, migrator string) error {
 	return nil
 }
 
+func ensureLockTable(conn *pgx.Conn, lockName string) (pgx.Tx, error) {
+	// create the table but drop errors if they occur, as this will result in a race condition over the name
+	// index in the event of a parallel creation.  the rest of the logic below will accomplish the locking
+	// needed to prevent further racing
+	_, _ = conn.Exec(context.Background(), "CREATE TABLE IF NOT EXISTS evo_advisory_locks (name TEXT PRIMARY KEY)")
+
+	_, err := conn.Exec(context.Background(), "INSERT INTO evo_advisory_locks (name) VALUES ($1) ON CONFLICT DO NOTHING", lockName)
+	if err != nil {
+		return nil, fmt.Errorf("unable to write advisory lock entry: %w", err)
+	}
+
+	tx, err := conn.Begin(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	_, err = tx.Exec(context.Background(), "SELECT name FROM evo_advisory_locks WHERE name = $1 FOR UPDATE", lockName)
+	if err != nil {
+		return nil, err
+	}
+
+	return tx, nil
+}
+
 func doMigration(config *Config, preValidationHook func(config *Config)) error {
+	fmt.Printf("initiating concurrency mitigation\n")
+	concurrencyConn, err := pgx.Connect(context.Background(), config.GetAdminConnUrl("postgres"))
+	if err != nil {
+		return fmt.Errorf("unable to connect to database: %w", err)
+	}
+	defer func() {
+		_ = concurrencyConn.Close(context.Background())
+	}()
+
+	// ensures the locking schema exists and takes out a simulated advisory lock
+	tx, err := ensureLockTable(concurrencyConn, config.Database)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(context.Background())
+	}()
+
 	fmt.Printf("connecting to postgres database\n")
 	adminConn, err := pgx.Connect(context.Background(), config.GetAdminConnUrl("postgres"))
 	if err != nil {
 		return fmt.Errorf("unable to connect to database: %w", err)
 	}
-	defer adminConn.Close(context.Background())
-
-	var h maphash.Hash
-	_, err = h.WriteString(fmt.Sprintf("evo_db_%s", config.Database))
-	if err != nil {
-		return err
-	}
-	hashSum := int64(h.Sum64() / 2)
-	_, err = adminConn.Exec(context.Background(), "SELECT pg_advisory_lock($1)", hashSum)
-	if err != nil {
-		return fmt.Errorf("unable to obtain advisory lock: %w", err)
-	}
+	defer func() {
+		_ = adminConn.Close(context.Background())
+	}()
 
 	var exists bool
 
@@ -344,6 +377,9 @@ func doMigration(config *Config, preValidationHook func(config *Config)) error {
 	globPattern := filepath.Join(config.Directory, "*.sql")
 	fmt.Printf("globbing %s for migrators\n", globPattern)
 	matches, err := filepath.Glob(globPattern)
+	if err != nil {
+		return err
+	}
 	sort.Slice(matches, func(i, j int) bool {
 		return i < j
 	})

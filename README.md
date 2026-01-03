@@ -4,8 +4,9 @@ evo is a postgres compatible database migration tool, designed to operate as a s
 ## features
 - create database
 - roll forward migrations
+- concurrent access mitigation using postgres/cockroachdb compatible locking strategy
 
-## usage
+## cli usage
 ```
 evo <directory>
 ```
@@ -30,3 +31,17 @@ evo will perform a few operations on each invocation, in the following order:
 - ensure that the database exists (or create it if it doesn't)
 - ensure that the non-admin user exists (or is created if it doesn't, and grant schema rights to the database)
 - test the non-admin user password matches that which is specified in the environment and correct it if it does not match
+
+
+## docker container usage
+```
+docker run --rm -v /home/user/migrations:/migrations \
+  -e EVO_DB_HOST=hostname:5432 \
+  -e EVO_DB_DATABASE=mydbname \
+  -e EVO_DB_ADMIN_USERNAME=adminuser \
+  -e EVO_DB_ADMIN_PASSWORD=adminpassword \
+  -e EVO_DB_USERNAME=username \
+  -e EVO_DB_PASSWORD=password \
+  -e EVO_AUTO_UPDATE_PASSWORD=1 \
+   frozengoats/evo
+```
