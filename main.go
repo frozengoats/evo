@@ -108,7 +108,8 @@ func getConfig(directory string) (*Config, error) {
 		Database:           database,
 		Username:           username,
 		Password:           password,
-		AdminUsername:      adminPassword,
+		AdminUsername:      adminUsername,
+		AdminPassword:      adminPassword,
 		AutoUpdatePassword: autoUpdatePassword,
 	}, nil
 }
